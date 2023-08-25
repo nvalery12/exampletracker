@@ -1,86 +1,84 @@
 import cv2
-import torch
-from torchvision.models.detection import fasterrcnn_resnet50_fpn
-from torchvision.transforms import functional as F
+import dlib
+import random
+import numpy as np
+from deepface import DeepFace
 
+# Load the pre-trained MobileNet SSD model
+net = cv2.dnn.readNetFromCaffe("MobileNetSSD_deploy.prototxt", "MobileNetSSD_deploy.caffemodel")
 
-def get_model():
-    model = fasterrcnn_resnet50_fpn(weights="FasterRCNN_ResNet50_FPN_Weights.DEFAULT")
-    model.eval()
-    return model
+# Load dlib's correlation tracker
+trackers = {}
+colors = {}
 
+# Open the webcam
+cap = cv2.VideoCapture(0)
 
-def detect_people(model, images):
-    with torch.no_grad():
-        max_h = max(img.shape[0] for img in images)
-        max_w = max(img.shape[1] for img in images)
+while True:
+    ret, frame = cap.read()
+    if not ret:
+        break
 
-        padded_images = []
-        for img in images:
-            pad_top = (max_h - img.shape[0]) // 2
-            pad_bottom = max_h - img.shape[0] - pad_top
-            pad_left = (max_w - img.shape[1]) // 2
-            pad_right = max_w - img.shape[1] - pad_left
+    # Detect objects using MobileNet SSD
+    blob = cv2.dnn.blobFromImage(cv2.resize(frame, (300, 300)), 0.007843, (300, 300), 127.5)
+    net.setInput(blob)
+    detections = net.forward()
 
-            padded_img = cv2.copyMakeBorder(
-                img,
-                pad_top,
-                pad_bottom,
-                pad_left,
-                pad_right,
-                cv2.BORDER_CONSTANT,
-                value=0,
-            )
-            padded_images.append(padded_img)
+    if len(detections) > 0:
+        new_trackers = {}
 
-        image_tensors = [F.to_tensor(img) for img in padded_images]
-        image_tensors = torch.stack(image_tensors)
+        for idx in range(detections.shape[2]):
+            confidence = detections[0, 0, idx, 2]
 
-        predictions = model(image_tensors)
+            if confidence > 0.5:
+                class_id = int(detections[0, 0, idx, 1])
 
-        detected_people_batch = []
-        for i in range(len(predictions)):  # Iterate through batch
-            boxes = predictions[i]["boxes"]
-            scores = predictions[i]["scores"]
-            labels = predictions[i]["labels"].cpu()  # Convert to CPU tensor
-            persons = [
-                box
-                for box, score, label in zip(boxes, scores, labels)
-                if score > 0.5 and label.item() == 1
-            ]
-            detected_people_batch.append(persons)
+                if class_id == 15:
+                    box = detections[0, 0, idx, 3:7] * np.array([frame.shape[1], frame.shape[0], frame.shape[1], frame.shape[0]])
+                    (startX, startY, endX, endY) = box.astype("int")
+                    pedestrian = dlib.rectangle(startX, startY, endX, endY)
 
-        return detected_people_batch
+                    if idx not in trackers:
+                        # Initialize tracker for detected pedestrian
+                        tracker = dlib.correlation_tracker()
+                        tracker.start_track(frame, pedestrian)
+                        new_trackers[idx] = tracker
 
+                        # Generate a random color for each new person
+                        colors[idx] = (random.randint(0, 255), random.randint(0, 255), random.randint(0, 255))
+                    else:
+                        new_trackers[idx] = trackers[idx]
 
-if __name__ == "__main__":
-    cap = cv2.VideoCapture(0)  # Use the default webcam
-    model = get_model()
+        trackers = new_trackers
 
-    frame_buffer = []
-    batch_size = 8
+    for idx, tracker in trackers.items():
+        tracker.update(frame)
+        pos = tracker.get_position()
+        x1, y1, x2, y2 = int(pos.left()), int(pos.top()), int(pos.right()), int(pos.bottom())
+        color = colors[idx]
 
-    while True:
-        ret, frame = cap.read()
-        if not ret:
-            break
+        # Extract the face region if within frame boundaries
+        if y1 >= 0 and y2 < frame.shape[0] and x1 >= 0 and x2 < frame.shape[1]:
+            face_region = frame[y1:y2, x1:x2]
 
-        frame_buffer.append(frame)
+            # Analyze the emotion using deepface
+            try:
+                emotion_analysis = DeepFace.analyze(face_region, actions=['emotion'])
 
-        if len(frame_buffer) >= batch_size:
-            batch_frames = frame_buffer[-batch_size:]
-            detected_people_batch = detect_people(model, batch_frames)
-            frame_buffer.clear()
+                # Get the dominant emotion from the emotion analysis result
+                dominant_emotion = emotion_analysis[0]['dominant_emotion']
 
-            for detected_people, frame in zip(detected_people_batch, batch_frames):
-                for box in detected_people:
-                    x, y, x2, y2 = map(int, box)
-                    cv2.rectangle(frame, (x, y), (x2, y2), (0, 255, 0), 2)
+                # Draw bounding box and display the dominant emotion analysis
+                cv2.rectangle(frame, (x1, y1), (x2, y2), color, 3)
+                cv2.putText(frame, f'Person {idx} - Emotion: {dominant_emotion}', (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.9, color, 2)
+            except:
+                pass
 
-                cv2.imshow("Person Detection", frame)
-                key = cv2.waitKey(1)
-                if key == 27:  # Press 'Esc' to exit
-                    break
+    # Display the frame
+    cv2.imshow("Pedestrian Tracking", frame)
 
-    cap.release()
-    cv2.destroyAllWindows()
+    if cv2.waitKey(1) & 0xFF == ord('q'):
+        break
+
+cap.release()
+cv2.destroyAllWindows()
