@@ -14,7 +14,7 @@ trackers = {}
 colors = {}
 
 # Open the webcam
-cap = cv2.VideoCapture(0)
+cap = cv2.VideoCapture("/dv/video2")
 cap.set(3, 1920)  # Set width
 cap.set(4, 1080)  # height
 
@@ -97,7 +97,7 @@ while True:
                     dominant_emotion = emotion_analysis[0]["dominant_emotion"]
                 except:
                     pass
-
+                finally:
                     # Draw bounding box and display the dominant emotion analysis
                     cv2.rectangle(frame, (x1, y1), (x2, y2), color, 3)
                     cv2.putText(
