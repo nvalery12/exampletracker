@@ -3,6 +3,8 @@ import dlib
 import random
 import numpy as np
 from deepface import DeepFace
+from deepface.basemodels import VGGFace
+from deepface.commons import functions
 
 # Load dlib's face detector
 detector = dlib.get_frontal_face_detector()
@@ -11,8 +13,12 @@ detector = dlib.get_frontal_face_detector()
 trackers = {}
 colors = {}
 
+# Load the emotion detection model
+emotion_model = VGGFace.loadModel()
+emotion_labels = functions.emotion_labels
+
 # Open the webcam
-cap = cv2.VideoCapture("/dev/video2")
+cap = cv2.VideoCapture(0)
 cap.set(3, 1920)  # Set width
 cap.set(4, 1080)  # height
 
@@ -69,15 +75,17 @@ while True:
             )
             color = colors[idx]
 
-            # Analyze the emotion using deepface
+            # Analyze the emotion using the emotion detection model
             dominant_emotion = "None"
             try:
-                emotion_analysis = DeepFace.analyze(
-                    frame[y1:y2, x1:x2], actions=["emotion"]
+                face_for_emotion = cv2.resize(face_region, (48, 48))
+                face_for_emotion = cv2.cvtColor(face_for_emotion, cv2.COLOR_BGR2GRAY)
+                face_for_emotion = np.reshape(
+                    face_for_emotion,
+                    [1, face_for_emotion.shape[0], face_for_emotion.shape[1], 1],
                 )
-
-                # Get the dominant emotion from the emotion analysis result
-                dominant_emotion = emotion_analysis["dominant_emotion"]
+                emotion_analysis = emotion_model.predict(face_for_emotion)
+                dominant_emotion = emotion_labels[np.argmax(emotion_analysis)]
             except:
                 pass
 
