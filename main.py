@@ -13,6 +13,8 @@ colors = {}
 
 # Open the webcam
 cap = cv2.VideoCapture(0)
+cap.set(3, 1920)  # Set width
+cap.set(4, 1080)   # height
 
 while True:
     ret, frame = cap.read()
