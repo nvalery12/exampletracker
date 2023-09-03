@@ -12,7 +12,7 @@ trackers = {}
 colors = {}
 
 # Open the webcam
-cap = cv2.VideoCapture(0)
+cap = cv2.VideoCapture("/dev/video2")
 cap.set(3, 1920)  # Set width
 cap.set(4, 1080)  # height
 
@@ -43,7 +43,8 @@ while True:
                 if idx not in trackers:
                     # Initialize tracker for detected face
                     tracker = dlib.correlation_tracker()
-                    tracker.start_track(frame, face)
+                    rect = dlib.rectangle(x1, y1, x2, y2)
+                    tracker.start_track(frame, rect)
                     new_trackers[idx] = tracker
 
                     # Generate a random color for each new person
@@ -76,7 +77,7 @@ while True:
                 )
 
                 # Get the dominant emotion from the emotion analysis result
-                dominant_emotion = emotion_analysis[0]["dominant_emotion"]
+                dominant_emotion = emotion_analysis["dominant_emotion"]
             except:
                 pass
 
